@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#181817" media="(prefers-color-scheme: dark)">
+<title>Notes</title>
+<style>
+:root{
+  --bg:#fff; --side:#faf9f7; --fg:#1c1c1a; --muted:#a3a29e;
+  --line:#ededeb; --hover:#f2f1ee;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#131312; --side:#181817; --fg:#e9e9e6; --muted:#6d6d69;
+    --line:#262624; --hover:#202020;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  display:flex;overflow:hidden;
+}
+
+/* ---------- 侧栏 ---------- */
+aside{
+  flex:0 0 272px;width:272px;background:var(--side);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.side-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 14px 8px 18px;
+  font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+}
+.new{
+  width:26px;height:26px;border:0;border-radius:7px;background:none;
+  color:var(--muted);font-size:17px;line-height:1;cursor:pointer;
+  display:grid;place-items:center;transition:background .12s,color .12s;
+}
+.new:hover{background:var(--hover);color:var(--fg)}
+
+ul{list-style:none;margin:0;padding:4px 8px 20px;flex:1;overflow:auto}
+li{
+  position:relative;padding:8px 30px 8px 10px;border-radius:8px;cursor:pointer;
+}
+li:hover{background:var(--hover)}
+li.on{background:var(--hover)}
+li .t{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+li .d{font-size:11px;color:var(--muted);margin-top:1px}
+li .x{
+  position:absolute;right:5px;top:50%;transform:translateY(-50%);
+  width:20px;height:20px;border:0;border-radius:5px;background:none;color:var(--muted);
+  font-size:12px;line-height:1;cursor:pointer;opacity:0;display:grid;place-items:center;
+  transition:opacity .12s,background .12s;
+}
+li:hover .x{opacity:1}
+li .x:hover{background:var(--line);color:var(--fg)}
+.empty{padding:26px 18px;color:var(--muted);font-size:13px;line-height:1.7}
+
+/* ---------- 编辑区 ---------- */
+main{flex:1;overflow:auto;position:relative}
+.wrap{max-width:600px;margin:0 auto;padding:80px 30px 140px}
+textarea{
+  display:block;width:100%;min-height:55vh;
+  border:0;outline:0;resize:none;overflow:hidden;background:none;
+  color:var(--fg);font:inherit;line-height:1.8;padding:0;
+}
+textarea::placeholder{color:var(--muted)}
+.blank{
+  position:absolute;inset:0;display:grid;place-items:center;
+  color:var(--muted);font-size:13.5px;pointer-events:none;
+}
+.mob-head{display:none}
+
+/* ---------- 手机 ---------- */
+@media (max-width:720px){
+  body{display:block;overflow:auto}
+  aside{width:100%;height:100%;border-right:0;position:fixed;inset:0;z-index:2}
+  main{display:none;min-height:100%}
+  body.editing aside{display:none}
+  body.editing main{display:block}
+  .wrap{padding:64px 22px 120px}
+  textarea{min-height:70vh}
+  .mob-head{
+    display:flex;align-items:center;gap:4px;
+    position:fixed;top:0;left:0;right:0;z-index:5;height:46px;
+    padding:0 10px;background:var(--bg);border-bottom:1px solid var(--line);
+  }
+  .mob-head button{
+    width:34px;height:34px;border:0;border-radius:8px;background:none;
+    color:var(--muted);font-size:20px;line-height:1;cursor:pointer;
+  }
+  .mob-head button:active{background:var(--hover)}
+  .mob-head .mt{
+    font-size:12px;color:var(--muted);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  li .x{opacity:1}
+}
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="side-head">
+    <span>Notes</span>
+    <button class="new" id="add" title="新建 (N)">+</button>
+  </div>
+  <ul id="list"></ul>
+</aside>
+
+<main id="main">
+  <div class="mob-head">
+    <button id="back" title="返回">&#8249;</button>
+    <span class="mt" id="mt"></span>
+  </div>
+  <div class="blank" id="blank">+ 新建一条笔记</div>
+  <div class="wrap"><textarea id="ta" placeholder="随便写点什么…" spellcheck="false"></textarea></div>
+</main>
+
+<script>
+const KEY = 'notes.v1';
+const $ = s => document.querySelector(s);
+const uid = () => (crypto.randomUUID?.() ?? String(Date.now()) + Math.random().toString(36).slice(2));
+
+let notes = [];
+let curId = null;
+let timer = null;
+
+try { notes = JSON.parse(localStorage.getItem(KEY)) || []; } catch { notes = []; }
+
+const persist = () => localStorage.setItem(KEY, JSON.stringify(notes));
+const byId   = id => notes.find(n => n.id === id);
+const titleOf= n => (n.text.split('\n').find(l => l.trim()) || '空笔记').trim().slice(0, 30);
+const fmt    = t => {
+  const d = new Date(t), now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  return same
+    ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+};
+
+function autosize(){
+  const ta = $('#ta');
+  ta.style.height = 'auto';
+  ta.style.height = Math.max(ta.scrollHeight, 40) + 'px';
+}
+
+function render(){
+  const editing = !!curId;
+  document.body.classList.toggle('editing', editing);
+  $('#blank').style.display = (editing || notes.length) ? 'none' : 'grid';
+  $('.wrap').style.display = editing ? 'block' : 'none';
+
+  const n = curId ? byId(curId) : null;
+  if (n) {
+    $('#ta').value = n.text;
+    $('#mt').textContent = titleOf(n);
+    autosize();
+  }
+
+  const ul = $('#list');
+  ul.textContent = '';
+  const sorted = [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  if (!sorted.length) {
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = '还没有笔记';
+    ul.append(d);
+    return;
+  }
+
+  for (const note of sorted) {
+    const li = document.createElement('li');
+    if (note.id === curId) li.classList.add('on');
+
+    const t = document.createElement('div');
+    t.className = 't';
+    t.textContent = titleOf(note);
+
+    const d = document.createElement('div');
+    d.className = 'd';
+    d.textContent = fmt(note.updatedAt);
+
+    const x = document.createElement('button');
+    x.className = 'x';
+    x.textContent = '\u00d7';
+    x.title = '删除';
+    x.onclick = e => { e.stopPropagation(); remove(note.id); };
+
+    li.append(t, d, x);
+    li.onclick = () => open(note.id);
+    ul.append(li);
+  }
+}
+
+function open(id){
+  curId = id;
+  render();
+  if (window.innerWidth > 720) $('#ta').focus();
+}
+
+function create(){
+  const n = { id: uid(), text: '', updatedAt: Date.now() };
+  notes.push(n);
+  persist();
+  curId = n.id;
+  render();
+  $('#ta').focus();
+}
+
+function remove(id){
+  if (!confirm('删除这条笔记？')) return;
+  notes = notes.filter(n => n.id !== id);
+  persist();
+  if (curId === id) curId = null;
+  render();
+}
+
+$('#add').onclick = create;
+$('#back').onclick = () => { curId = null; render(); };
+
+$('#ta').oninput = e => {
+  const n = byId(curId);
+  if (!n) return;
+  n.text = e.target.value;
+  n.updatedAt = Date.now();
+  autosize();
+  clearTimeout(timer);
+  timer = setTimeout(persist, 300);
+};
+
+// N 新建（不在输入框内时）
+document.addEventListener('keydown', e => {
+  if (e.target === $('#ta')) return;
+  if (e.key === 'n' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); create(); }
+});
+
+// 关闭前兜底落盘
+window.addEventListener('beforeunload', () => { clearTimeout(timer); persist(); });
+
+render();
+</script>
+</body>
+</html>
